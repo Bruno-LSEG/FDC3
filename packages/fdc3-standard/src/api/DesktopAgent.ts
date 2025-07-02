@@ -16,6 +16,7 @@ import { AppMetadata } from './AppMetadata';
 import { Intent } from '../intents/Intents';
 import { ContextType } from '../context/ContextType';
 import { EventHandler, FDC3EventTypes } from './Events';
+import { HandlerInvocationMode } from './ContextListenerHandlerInvocationMode';
 
 /**
  * A Desktop Agent is a desktop component (or aggregate of components) that serves as a
@@ -362,10 +363,14 @@ export interface DesktopAgent {
    *
    * ```javascript
    * // any context
-   * const listener = await fdc3.addContextListener(null, context => { ... });
+   * const listener = await fdc3.addContextListener(null, context => { ... });*
+   * 
+   * // listener for a subset of types
+   * const contactListener = await fdc3.addContextListener(['fdc3.instrument', 'fdc3.instrumentList'], context => { ... });
    *
    * // listener for a specific type
    * const contactListener = await fdc3.addContextListener('fdc3.contact', contact => { ... });
+   * 
    *
    * // listener that logs metadata for the message a specific type
    * const contactListener = await fdc3.addContextListener('fdc3.contact', (contact, metadata) => {
@@ -374,7 +379,7 @@ export interface DesktopAgent {
    * });
    * ```
    */
-  addContextListener(contextType: ContextType | null, handler: ContextHandler): Promise<Listener>;
+  addContextListener(contextType: ContextType | ContextType[] | null, handler: ContextHandler, invocationMode?: HandlerInvocationMode): Promise<Listener>;
 
   /**
    * Register a handler for events from the Desktop Agent. Whenever the handler function
