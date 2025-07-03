@@ -185,7 +185,9 @@ func (desktopAgent *DesktopAgent) AddContextListener(contextType string, handler
 </TabItem>
 </Tabs>
 
-Adds a listener for incoming context broadcasts from the Desktop Agent (via a User channel or [`fdc3.open`](#open) API call). If the consumer is only interested in a context of a particular type, they can specify that type. If the consumer is capable of handling a known limited subset of context types, they can specify an array of `contextType` that they support. If the consumer is able to receive context of any type or will inspect types received, then they can pass `null` as the `contextType` parameter to receive all context types.
+
+
+Adds a listener for incoming context broadcasts from the Desktop Agent (via a User channel or [`fdc3.open`](#open) API call). If the consumer is only interested in one or more contexts of a particular type, they can specify such types, either by specifying a single `contextType` or an array of `contextType`. If the consumer is able to receive context of any type or will inspect types received, then they can pass `null` as the `contextType` parameter to receive all context types.
 
 Context broadcasts are primarily received from apps that are joined to the same User Channel as the listening application, hence, if the application is not currently joined to a User Channel no broadcasts will be received from User channels. 
 
@@ -196,11 +198,27 @@ Using the third optional parameter `invocationMode`, the application can specify
 ### Single  
 The registered context handler method will be invoked only once with the latest context type. If `null` or `contextType[]` was passed as the context type for the listener and the channel contains multiple context types availabe, then the handler function will be called immediately with the single most recent context - regardless of type. Only one invocation will be made.
 
-### Multiple
-If a single `contextType` is specified, the behavior should be the same as `HandlerInvocationMode.Single`.  
-If `null` or a `contextType[]` is provided, when the app joins a channel the handler is invoked exactly once per type, supplying only the latest context for each.  
+```ts
+11:00 App A and App B both join channel green
+11.01 App A broadcasts an instrument
+11.02 App A broadcasts an instrumentList
+11.03 App B broadcasts a contact
+11.04 App C adds a context handler: await fdc3.addContextListener(null, context => { ... }, HandlerInvocationMode.Single);
+11.05 App C joins channel green
+```
 
-The Desktop Agent MUST make the invocations in an ordered manner: the handler is first called for the `contextType` whose context arrived most recently, then for earlier types in reverse arrival order.  
+App C should have the context handler being invoked 1 time with:
+
+```ts
+fdc3.contact
+```
+
+### Multiple
+If a single `contextType` is specified, the behavior should be the same as `HandlerInvocationMode.Single`.
+
+If `null` or a `contextType[]` is provided, when the app joins a channel the handler is invoked exactly once per type, supplying only the latest context for each type available in the channel.
+
+The Desktop Agent MUST make the invocations in an ordered manner: the handler is first called for the `contextType` whose context arrived most recently, then for earlier types in reverse arrival order.
 
 Given the following broadcasts to a channel:
 
@@ -209,7 +227,7 @@ Given the following broadcasts to a channel:
 11.01 App A broadcasts an instrument
 11.02 App A broadcasts an instrumentList
 11.03 App B broadcasts a contact
-11.04 App C adds a context handler: await fdc3.addContextListener(null, context => { ... }, HandlerInvocationMode.multiple);
+11.04 App C adds a context handler: await fdc3.addContextListener(null, context => { ... }, HandlerInvocationMode.Multiple);
 11.05 App C joins channel green
 ```
 
@@ -221,7 +239,7 @@ fdc3.instrumentList
 fdc3.instrument
 ```
 
-By default, if no mode is specified, the Desktop Agent MUST treat it as a `Single` mode lsitener
+By default, if no mode is specified, the Desktop Agent MUST treat it as a `Single` mode listener
 
 Context may also be received via this listener if the application was launched via a call to  [`fdc3.open`](#open), where context was passed as an argument. In order to receive this, applications SHOULD add their context listener as quickly as possible after launch, or an error MAY be returned to the caller and the context may not be delivered. The exact timeout used is set by the Desktop Agent implementation, but MUST be at least 15 seconds.
 
@@ -240,13 +258,13 @@ const listener = await fdc3.addContextListener(null, context => { ... });
 const contactListener = await fdc3.addContextListener('fdc3.contact', contact => { ... });
 
 // listener for a limited subset of types - Only one invocation will be made when the app joins a channel
-const contactListener = await fdc3.addContextListener(['fdc3.instrument', 'fdc3.instrumentList'], contact => { ... }, HandlerInvocationMode.single);
+const singleModeListener = await fdc3.addContextListener(['fdc3.instrument', 'fdc3.instrumentList'], context => { ... }, HandlerInvocationMode.Single);
 
-// Not passing a HandlerInvocationMode will have the same result as the example above
-const contactListener = await fdc3.addContextListener(['fdc3.instrument', 'fdc3.instrumentList'], contact => { ... });
+// Not passing a HandlerInvocationMode will have the same result as setting it to Single as in the example above
+const noModeListener = await fdc3.addContextListener(['fdc3.instrument', 'fdc3.instrumentList'], context => { ... });
 
-// Specifying 
-const contactListener = await fdc3.addContextListener(['fdc3.instrument', 'fdc3.instrumentList'], contact => { ... }, HandlerInvocationMode.multiple);
+// Specifying an array of context types with Multiple invocation mode, the listener will be invoked once for each of the types available in the channel upon joining it.
+const multipleModeListener = await fdc3.addContextListener(['fdc3.instrument', 'fdc3.instrumentList'], context => { ... }, HandlerInvocationMode.Multiple);
 
 // listener that logs metadata for the message a specific type
 const contactListener = await fdc3.addContextListener('fdc3.contact', (contact, metadata) => {

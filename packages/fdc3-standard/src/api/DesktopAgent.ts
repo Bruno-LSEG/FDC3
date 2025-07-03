@@ -16,7 +16,7 @@ import { AppMetadata } from './AppMetadata';
 import { Intent } from '../intents/Intents';
 import { ContextType } from '../context/ContextType';
 import { EventHandler, FDC3EventTypes } from './Events';
-import { HandlerInvocationMode } from './ContextListenerHandlerInvocationMode';
+import { ContextListenerInvocationMode } from './ContextListenerHandlerInvocationMode';
 
 /**
  * A Desktop Agent is a desktop component (or aggregate of components) that serves as a
@@ -353,28 +353,80 @@ export interface DesktopAgent {
   addIntentListener(intent: Intent, handler: IntentHandler): Promise<Listener>;
 
   /**
-   * Adds a listener for incoming context broadcasts from the Desktop Agent (via a User channel or `fdc3.open`API call. If the consumer is only interested in a context of a particular type, they can they can specify that type. If the consumer is able to receive context of any type or will inspect types received, then they can pass `null` as the `contextType` parameter to receive all context types.
-   *
-   * Context broadcasts are primarily received from apps that are joined to the same User Channel as the listening application, hence, if the application is not currently joined to a User Channel no broadcasts will be received from channels. If this function is called after the app has already joined a channel and the channel already contains context that would be passed to the context listener, then it will be called immediately with that context.
-   *
-   * Context may also be received via this listener if the application was launched via a call to  `fdc3.open`, where context was passed as an argument. In order to receive this, applications SHOULD add their context listener as quickly as possible after launch, or an error MAY be returned to the caller and the context may not be delivered. The exact timeout used is set by the Desktop Agent implementation, but MUST be at least 15 seconds.
-   *
-   * Optional metadata about the context message, including the app that originated the message, SHOULD be provided by the desktop agent implementation.
    * 
-   * Optional invocationMode can be specified to control how the handler is invoked when the app joins a channel. 
-   * A null value should be treated by the DA as `single`, which means the handler will be invoked only once with the latest context on the channel, regardless of type. 
-   * If `multiple` is specified, the handler will be invoked once for each context type available in the channel.
-   *
-   * ```javascript
+   * Adds a listener for incoming context broadcasts from the Desktop Agent (via a User channel or `fdc3.open` API call). If the consumer is only interested in one or more contexts of a particular type, they can specify such types, either by specifying a single `contextType` or an array of `contextType`. If the consumer is able to receive context of any type or will inspect types received, then they can pass `null` as the `contextType` parameter to receive all context types.
+   * 
+   * Context broadcasts are primarily received from apps that are joined to the same User Channel as the listening application, hence, if the application is not currently joined to a User Channel no broadcasts will be received from User channels. 
+   * 
+   * If this function is called after the app has already joined a channel and the channel already contains context that matches the type of the context listener, then it will be called immediately and the context passed to the handler function.
+   * 
+   * Using the third optional parameter `invocationMode`, the application can specify two different ways for how the Desktop Agent invokes its contextHandler when the app joins a channel:
+   * 
+   * ### Single  
+   * The registered context handler method will be invoked only once with the latest context type. If `null` or `contextType[]` was passed as the context type for the listener and the channel contains multiple context types availabe, then the handler function will be called immediately with the single most recent context - regardless of type. Only one invocation will be made.
+   * 
+   * ```ts
+   * 11:00 App A and App B both join channel green
+   * 11.01 App A broadcasts an instrument
+   * 11.02 App A broadcasts an instrumentList
+   * 11.03 App B broadcasts a contact
+   * 11.04 App C adds a context handler: await fdc3.addContextListener(null, context => { ... }, HandlerInvocationMode.Single);
+   * 11.05 App C joins channel green
+   * ```
+   * 
+   * App C should have the context handler being invoked 1 time with:
+   * 
+   * ```ts
+   * fdc3.contact
+   * ```
+   * 
+   * ### Multiple
+   * If a single `contextType` is specified, the behavior should be the same as `HandlerInvocationMode.Single`.
+   * 
+   * If `null` or a `contextType[]` is provided, when the app joins a channel the handler is invoked exactly once per type, supplying only the latest context for each type available in the channel.
+   * 
+   * The Desktop Agent MUST make the invocations in an ordered manner: the handler is first called for the `contextType` whose context arrived most recently, then for earlier types in reverse arrival order.
+   * 
+   * Given the following broadcasts to a channel:
+   * 
+   * ```ts
+   * 11:00 App A and App B both join channel green
+   * 11.01 App A broadcasts an instrument
+   * 11.02 App A broadcasts an instrumentList
+   * 11.03 App B broadcasts a contact
+   * 11.04 App C adds a context handler: await fdc3.addContextListener(null, context => { ... }, HandlerInvocationMode.Multiple);
+   * 11.05 App C joins channel green
+   * ```
+   * 
+   * App C should have the context handler being invoked 3 times in the following order:
+   * 
+   * ```ts
+   * fdc3.contact
+   * fdc3.instrumentList
+   * fdc3.instrument
+   * ```
+   * 
+   * By default, if no mode is specified, the Desktop Agent MUST treat it as a `Single` mode listener
+   * 
+   * Context may also be received via this listener if the application was launched via a call to  [`fdc3.open`](#open), where context was passed as an argument. In order to receive this, applications SHOULD add their context listener as quickly as possible after launch, or an error MAY be returned to the caller and the context may not be delivered. The exact timeout used is set by the Desktop Agent implementation, but MUST be at least 15 seconds.
+   * 
+   * Optional metadata about each context message received, including the app that originated the message, SHOULD be provided by the Desktop Agent implementation.
+   * **Examples:**
+   * ```js
    * // any context
-   * const listener = await fdc3.addContextListener(null, context => { ... });*
-   * 
-   * // listener for a subset of types
-   * const contactListener = await fdc3.addContextListener(['fdc3.instrument', 'fdc3.instrumentList'], context => { ... });
+   * const listener = await fdc3.addContextListener(null, context => { ... });
    *
    * // listener for a specific type
    * const contactListener = await fdc3.addContextListener('fdc3.contact', contact => { ... });
-   * 
+   *
+   * // listener for a limited subset of types - Only one invocation will be made when the app joins a channel
+   * const singleModeListener = await fdc3.addContextListener(['fdc3.instrument', 'fdc3.instrumentList'], context => { ... }, HandlerInvocationMode.Single);
+   *
+   * // Not passing a HandlerInvocationMode will have the same result as setting it to Single as in the example above
+   * const noModeListener = await fdc3.addContextListener(['fdc3.instrument', 'fdc3.instrumentList'], context => { ... });
+   *
+   * // Specifying an array of context types with Multiple invocation mode, the listener will be invoked once for each of the types available in the channel upon joining it.
+   * const multipleModeListener = await fdc3.addContextListener(['fdc3.instrument', 'fdc3.instrumentList'], context => { ... }, HandlerInvocationMode.Multiple);
    *
    * // listener that logs metadata for the message a specific type
    * const contactListener = await fdc3.addContextListener('fdc3.contact', (contact, metadata) => {
@@ -383,7 +435,7 @@ export interface DesktopAgent {
    * });
    * ```
    */
-  addContextListener(contextType: ContextType | ContextType[] | null, handler: ContextHandler, invocationMode?: HandlerInvocationMode): Promise<Listener>;
+  addContextListener(contextType: ContextType | ContextType[] | null, handler: ContextHandler, invocationMode?: ContextListenerInvocationMode): Promise<Listener>;
 
   /**
    * Register a handler for events from the Desktop Agent. Whenever the handler function
